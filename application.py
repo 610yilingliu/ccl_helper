@@ -4,7 +4,9 @@ import hashlib
 import string
 import subprocess
 from google.cloud import texttospeech
-
+import sounddevice as sd
+from scipy.io.wavfile import write
+import speech_recognition as sr
 
 apikey = os.getenv("OPENAI_API_KEY")
 
@@ -101,23 +103,51 @@ class ccl_helper:
 
     def record(self):
         '''
-        录音
+        录音15秒，其实可以设定为按下某个按键开始录音，再按下某个按键结束录音但是懒得做了
         '''
-        pass
+        duration = 5
+        sample_rate = 44100 
+
+        print("开始录音...")
+        audio_data = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=2)
+        sd.wait()
+        print("录音结束")
+        output_file = "tmp.wav"
+        write(output_file, sample_rate, audio_data)
+        print(f"录音已保存为 '{output_file}'")
 
     def voice_to_text(self):
         '''
         调用google api语音转文字
         '''
-        pass
+        recognizer = sr.Recognizer()
+        audio_file = "tmp.wav"
+        with sr.AudioFile(audio_file) as source:
+            # 读取音频数据
+            audio_data = recognizer.record(source)
+            
+            # 使用Google Web Speech API将语音转文字
+            try:
+                text = recognizer.recognize_google(audio_data, language="zh-CN")  # 指定中文语言
+                print("识别结果：", text)
+                return text
+            except sr.UnknownValueError:
+                raise Exception("无法识别语音")
+            except sr.RequestError:
+                raise Exception("无法连接到Google Web Speech API")
 
     def judgement(self, yourresponse, sentence):
         '''
         评分
         '''
-        prompt_base = f"""你是一个CCL（Credentialed Community Language Test）考官，需要判断考生的翻译水平。句子1是考生的翻译，句子2是原句，请判断考生的翻译是否正确并给出建议
+        prompt = f"""你是一个CCL（Credentialed Community Language Test）考官，需要判断考生的翻译水平。句子1是考生的翻译，句子2是原句，请判断考生的翻译是否正确并给出建议
         句子1：{yourresponse}
         句子2：{sentence}
         """
 
-        pass
+        response = openai.Completion.create(
+            engine="text-davinci-003",   # 选择模型（如 text-davinci-003）
+            prompt=prompt,
+            max_tokens=500               # 设置返回文本的最大字数
+        )
+        return response.choices[0].text
