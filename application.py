@@ -161,7 +161,7 @@ class ccl_helper:
                 temperature=0
             )
 
-        return response.choices[0].text
+        return response['choices'][0]['message']['content']
     
     def test(self, test_path):
         self.load_test(test_path)
