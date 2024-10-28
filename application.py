@@ -1,5 +1,5 @@
 import os
-import openai
+from openai import OpenAI
 import hashlib
 import string
 import subprocess
@@ -28,6 +28,7 @@ class ccl_helper:
             language_code="cmn-CN",
             name="cmn-CN-Wavenet-A",
         )
+        self.output = []
 
     def load_test(self, file):
         '''
@@ -140,14 +141,41 @@ class ccl_helper:
         '''
         评分
         '''
-        prompt = f"""你是一个CCL（Credentialed Community Language Test）考官，需要判断考生的翻译水平。句子1是考生的翻译，句子2是原句，请判断考生的翻译是否正确并给出建议
+        prompt = f"""句子1是考生的翻译，句子2是原句，请判断考生的翻译是否正确并给出建议
         句子1：{yourresponse}
         句子2：{sentence}
         """
-
-        response = openai.Completion.create(
-            engine="text-davinci-003",   # 选择模型（如 text-davinci-003）
-            prompt=prompt,
-            max_tokens=500               # 设置返回文本的最大字数
+        client = OpenAI(
+            # This is the default and can be omitted
+            api_key=os.environ.get("OPENAI_API_KEY"),
         )
+
+
+        response = client.chat.completions.create(
+                model="gpt-3.5-turbo",  # 最新的快速 GPT-4 版本
+                messages=[
+                    {"role": "system", "content": "你是一个CCL（Credentialed Community Language Test）考官，需要判断考生的翻译水平"},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200,
+                temperature=0
+            )
+
         return response.choices[0].text
+    
+    def test(self, test_path):
+        self.load_test(test_path)
+        for sentence in self.dialog:
+            sentence_path = self.text_to_voice(sentence)
+            self.playsound(sentence_path)
+            self.record()
+            recorded_text = self.voice_to_text()
+            judgement = self.judgement(recorded_text, sentence)
+            self.output.append(judgement)
+
+
+    
+
+if __name__ == '__main__':
+    ccl = ccl_helper(apikey)
+    print(ccl.judgement("你好", "你好呀"))
