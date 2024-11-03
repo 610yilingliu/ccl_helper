@@ -3,11 +3,12 @@ import hashlib
 import string
 import time
 import subprocess
-from openai import OpenAI
-from google.cloud import texttospeech
+
 import sounddevice as sd
+import keyboard
+import numpy as np
+from openai import OpenAI
 from scipy.io.wavfile import write
-import speech_recognition as sr
 
 apikey = os.getenv("OPENAI_API_KEY")
 
@@ -21,7 +22,6 @@ class ccl_helper:
         self.dialogidx = 0
         self.voicepath = "voice"
         self.output = []
-        self.tts = texttospeech.TextToSpeechClient()
         self.client = OpenAI(
             api_key=apikey
         )
@@ -103,66 +103,73 @@ class ccl_helper:
 
     def record(self):
         '''
-        录音15秒，其实可以设定为按下某个按键开始录音，再按下某个按键结束录音但是懒得做了
+        录音开始，按下回车键结束录音
         '''
-        duration = 5
-        sample_rate = 44100 
-
-        print("开始录音...")
-        audio_data = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=2)
-        sd.wait()
+        sample_rate = 44100
+        print("开始录音... 按下回车键结束录音")
+        
+        audio_data = []
+        
+        def callback(indata, frames, time, status):
+            audio_data.append(indata.copy())
+        
+        stream = sd.InputStream(samplerate=sample_rate, channels=2, callback=callback)
+        with stream:
+            keyboard.wait('enter')
+        
         print("录音结束")
+        audio_data = np.concatenate(audio_data, axis=0)
         output_file = "tmp.wav"
         write(output_file, sample_rate, audio_data)
         print(f"录音已保存为 '{output_file}'")
 
+
     def voice_to_text(self):
         '''
-        调用google api语音转文字
+        调用openAI API语音转文字
         '''
-        recognizer = sr.Recognizer()
         audio_file = "tmp.wav"
-        with sr.AudioFile(audio_file) as source:
-            # 读取音频数据
-            audio_data = recognizer.record(source)
-            
-            # 使用Google Web Speech API将语音转文字
-            try:
-                text = recognizer.recognize_google(audio_data, language="zh-CN")  # 指定中文语言
-                print("识别结果：", text)
-                return text
-            except sr.UnknownValueError:
-                raise Exception("无法识别语音")
-            except sr.RequestError:
-                raise Exception("无法连接到Google Web Speech API")
+        transcription = self.client.audio.transcriptions.create(
+        model="whisper-1", 
+        file=open(audio_file, "rb")
+        )
+        return transcription.text
 
     def judgement(self, yourresponse, sentence):
         '''
+
         评分
         '''
-        prompt = f"""句子1是考生的翻译，句子2是原句，请判断考生的翻译是否正确并给出建议
-        句子1：{yourresponse}
-        句子2：{sentence}
+        prompt = f"""
+        原句：{sentence}
+        考生翻译：{yourresponse}
+        请判断考生的翻译是否正确并给出建议
         """
         response = self.client.chat.completions.create(
+
+
                 model="gpt-3.5-turbo", 
                 messages=[
-                    {"role": "system", "content": "你是一个CCL（Credentialed Community Language Test）考官，需要判断考生的翻译水平"},
+                    {"role": "system", "content": "你是一个CCL（Credentialed Community Language Test）考官，需要判断考生的翻译水平。在原句是英文时，考生需要将其翻译为中文；在原句时中文时，考生需要将其翻译成英文"},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=200,
                 temperature=0
             )
 
-        return response['choices'][0]['message']['content']
+        return_message = f'原句：{sentence}, 你的回答：{yourresponse}, GPT评分：{response.choices[0].message.content}'
+
+        return return_message
     
     def test(self, test_path):
         self.load_test(test_path)
+
         for sentence in self.dialog:
             sentence_path = self.text_to_voice(sentence)
             self.playsound(sentence_path)
             self.record()
             recorded_text = self.voice_to_text()
+
             judgement = self.judgement(recorded_text, sentence)
             self.output.append(judgement)
 
@@ -177,5 +184,6 @@ class ccl_helper:
 
 if __name__ == '__main__':
     ccl = ccl_helper(apikey)
-    # print(ccl.judgement("你好", "你好呀"))
     ccl.play_sys_sound_only('./dialogs/02_booking_flight.txt')
+    # ccl.test('./dialogs/02_booking_flight.txt')
+    # print(ccl.output)

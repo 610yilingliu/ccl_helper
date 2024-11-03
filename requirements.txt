@@ -1,0 +1,6 @@
+keyboard
+openai
+sounddevice
+keyboard
+numpy
+scipy
