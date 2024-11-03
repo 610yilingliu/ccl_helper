@@ -1,8 +1,9 @@
 import os
-from openai import OpenAI
 import hashlib
 import string
+import time
 import subprocess
+from openai import OpenAI
 from google.cloud import texttospeech
 import sounddevice as sd
 from scipy.io.wavfile import write
@@ -14,28 +15,23 @@ apikey = os.getenv("OPENAI_API_KEY")
 class ccl_helper:
     def __init__(self, apikey):
         '''
-        apikey为openai的apikey，存放在同目录.env文件中（请自行创建.env文件，内容为OPENAI_API_KEY = '你的key'，如果没有就去https://platform.openai.com/api-keys自己建一个
+        apikey为openai的apikey，存放在同目录.env文件中（请自行创建.env文件，内容为OPENAI_API_KEY = '你的key'，如果没有就去https://platform.openai.com/api-keys自己建一个(记得充钱)
         '''
-        self.apikey = apikey
         self.dialog = None
         self.dialogidx = 0
         self.voicepath = "voice"
-        self.en_voice = texttospeech.VoiceSelectionParams(
-            language_code="en-US",
-            name="en-US-Studio-M",
-        )
-        self.zh_voice = texttospeech.VoiceSelectionParams(
-            language_code="cmn-CN",
-            name="cmn-CN-Wavenet-A",
-        )
         self.output = []
+        self.tts = texttospeech.TextToSpeechClient()
+        self.client = OpenAI(
+            api_key=apikey
+        )
 
     def load_test(self, file):
         '''
         每行为一个对话轮次，常规情况是一行英文（考试时需要你说对应英文），一行中文（考试时需要你说对应英文）
         self.dialog会变成一个列表
         '''
-        with open(file, "r") as f:
+        with open(file, "r", encoding= 'utf-8') as f:
             self.dialog = f.readlines()
 
     def is_chinese(self, text):
@@ -48,7 +44,7 @@ class ccl_helper:
         return False
     
     def calculate_md5(self, data):
-        def remove_punctuations(stext):
+        def remove_punctuations(text):
             text = text.translate(str.maketrans('', '', string.punctuation))
             text = text.strip()
             return text
@@ -77,22 +73,25 @@ class ccl_helper:
         cur_sentance = self.dialog[self.dialogidx]
         is_zh = self.is_chinese(cur_sentance)
         text_md5 = self.calculate_md5(text)
-        path = os.path.join(self.voicepath, text_md5, ".mp3")
+        p = text_md5 + '.mp3'
+        path = os.path.join(self.voicepath, p)
         if os.path.exists(path):
             return path
         if is_zh:
-            voice = self.zh_voice
+            voice = 'nova'
         else:
-            voice = self.en_voice
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.LINEAR16,
-            speaking_rate=1.2
+            voice = 'alloy'
+        response = self.client.audio.speech.create(
+        model="tts-1-hd",
+        voice=voice,
+        input=text,
+        speed = 0.95
         )
-        synthesis_input = texttospeech.SynthesisInput(text=text)
-        response = self.tts.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
+        # with open(path, "wb") as out:
+        #     out.write(response.audio_content)
         with open(path, "wb") as out:
-            out.write(response.audio_content)
-            print(f'MP3 Generated for Content: {text}')
+            out.write(response.content)
+        print(f'MP3 Generated')
         return path
     
     def talk(self):
@@ -145,14 +144,8 @@ class ccl_helper:
         句子1：{yourresponse}
         句子2：{sentence}
         """
-        client = OpenAI(
-            # This is the default and can be omitted
-            api_key=os.environ.get("OPENAI_API_KEY"),
-        )
-
-
-        response = client.chat.completions.create(
-                model="gpt-3.5-turbo",  # 最新的快速 GPT-4 版本
+        response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo", 
                 messages=[
                     {"role": "system", "content": "你是一个CCL（Credentialed Community Language Test）考官，需要判断考生的翻译水平"},
                     {"role": "user", "content": prompt}
@@ -174,8 +167,15 @@ class ccl_helper:
             self.output.append(judgement)
 
 
-    
+    def play_sys_sound_only(self, test_path):
+        self.load_test(test_path)
+        for sentence in self.dialog:
+            print(sentence)
+            sentence_path = self.text_to_voice(sentence)
+            self.playsound(sentence_path)
+            time.sleep(15)
 
 if __name__ == '__main__':
     ccl = ccl_helper(apikey)
-    print(ccl.judgement("你好", "你好呀"))
+    # print(ccl.judgement("你好", "你好呀"))
+    ccl.play_sys_sound_only('./dialogs/02_booking_flight.txt')
