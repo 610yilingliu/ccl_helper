@@ -9,6 +9,6 @@ apikey为openai的apikey，存放在同目录.env文件中（请自行创建.env
 
 ```pip install -r requirements.txt```
 
-application.py中有play_sys_sound_only(穷鬼辅助版，模拟考试环境)和text（土豪带评分版，这样会生成每句的AI评价但是很烧钱）
+application.py中有play_sys_sound_only(穷鬼辅助版，模拟考试环境)和test（土豪带评分版，这样会生成每句的AI评价但是很烧钱）.test会在self.output中生成一个列表，列表是每句话的评价
 
 requirements.txt中如果有包装不上可以google查一下对应的包的具体安装名，我直接把import后面接的写上去了，但可能有错
